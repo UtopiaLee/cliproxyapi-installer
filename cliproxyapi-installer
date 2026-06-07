@@ -533,13 +533,32 @@ start_service() {
 restart_service() {
     log_info "Restarting CLIProxyAPI service..."
     systemctl --user restart cliproxyapi.service
-    
+
     # Wait a moment and check if it started successfully
     sleep 2
     if is_service_running; then
         log_success "Service restarted successfully"
     else
         log_warning "Service may not have started properly. Check with: systemctl --user status cliproxyapi.service"
+    fi
+}
+
+# Ensure the user session survives shell logout so the service keeps running
+ensure_lingering() {
+    if ! command -v loginctl >/dev/null 2>&1; then
+        log_warning "loginctl not found; run 'loginctl enable-linger $USER' manually to keep the service alive after logout"
+        return
+    fi
+
+    if loginctl show-user "$USER" -p Linger --value 2>/dev/null | grep -qi '^yes$'; then
+        log_info "User lingering is already enabled for $USER"
+        return
+    fi
+
+    if loginctl enable-linger "$USER" >/dev/null 2>&1; then
+        log_success "Enabled user lingering for $USER so CLIProxyAPI keeps running after logout"
+    else
+        log_warning "Could not enable lingering automatically; run 'loginctl enable-linger $USER' as root to keep the service alive after logout"
     fi
 }
 
@@ -578,6 +597,9 @@ EOF
     
     # Reload systemd daemon
     systemctl --user daemon-reload || log_warning "Could not reload systemd daemon (this is normal on first run)"
+
+    # Keep the service alive after SSH/logout by enabling lingering when possible
+    ensure_lingering
 
     log_success "Systemd service file created: $service_file"
     log_success "Systemd service installed: $systemd_service_file"

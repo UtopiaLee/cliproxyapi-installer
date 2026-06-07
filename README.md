@@ -225,6 +225,8 @@ You'll see output like:
 
 ### Autostart Configuration
 
+> **Note**: If you install over SSH and want CLIProxyAPI to keep running after you close the shell or disconnect, enable user lingering (`loginctl enable-linger $USER`). The installer will try to enable it automatically when possible.
+
 **To enable CLIProxyAPI to start automatically on system boot:**
 
 ```bash
@@ -246,7 +248,7 @@ systemctl --user disable cliproxyapi.service
 **Important Notes:**
 - The `--user` flag means the service runs as your user and starts when you log in
 - For system-wide startup (requires root), you would need to manually install the service file to `/etc/systemd/system/`
-- User services require lingering to be enabled for startup without login: `loginctl enable-linger $USER`
+- User services require lingering to be enabled for startup without login or after SSH logout: `loginctl enable-linger $USER`
 
 **If the service is not working:**
 ```bash
