@@ -50,18 +50,18 @@ cd cliproxyapi-installer
      ./cli-proxy-api
 
      # Or as a systemd service (recommended)
-     systemctl --user enable cliproxyapi.service
-     systemctl --user start cliproxyapi.service
-     systemctl --user status cliproxyapi.service
+     sudo systemctl enable cliproxyapi.service
+     sudo systemctl start cliproxyapi.service
+     sudo systemctl status cliproxyapi.service
      ```
 
 4. **Enable autostart on boot** (recommended):
      ```bash
      # Enable the service to start automatically on user login
-     systemctl --user enable cliproxyapi.service
+     sudo systemctl enable cliproxyapi.service
      
      # Verify it's enabled
-     systemctl --user is-enabled cliproxyapi.service
+     sudo systemctl is-enabled cliproxyapi.service
      ```
 
 > **💡 Pro Tip**: The installer automatically manages the systemd service during upgrades. If the service is running when you upgrade, it will be gracefully stopped, updated, and restarted automatically.
@@ -184,23 +184,23 @@ The installer provides intelligent service handling during upgrades:
 ### Basic Service Management
 
 ```bash
-# Enable the service (starts on user login)
-systemctl --user enable cliproxyapi.service
+# Enable the service (starts on boot)
+sudo systemctl enable cliproxyapi.service
 
 # Start the service
-systemctl --user start cliproxyapi.service
+sudo systemctl start cliproxyapi.service
 
 # Check service status
-systemctl --user status cliproxyapi.service
+sudo systemctl status cliproxyapi.service
 
 # View service logs
-journalctl --user -u cliproxyapi.service -f
+sudo journalctl -u cliproxyapi.service -f
 
 # Stop the service
-systemctl --user stop cliproxyapi.service
+sudo systemctl stop cliproxyapi.service
 
 # Restart the service
-systemctl --user restart cliproxyapi.service
+sudo systemctl restart cliproxyapi.service
 ```
 
 ### Service Status During Upgrades
@@ -225,44 +225,43 @@ You'll see output like:
 
 ### Autostart Configuration
 
-> **Note**: If you install over SSH and want CLIProxyAPI to keep running after you close the shell or disconnect, enable user lingering (`loginctl enable-linger $USER`). The installer will try to enable it automatically when possible.
-
 **To enable CLIProxyAPI to start automatically on system boot:**
 
 ```bash
-# Enable the service for automatic startup on user login
-systemctl --user enable cliproxyapi.service
+# Enable the system-wide service
+sudo systemctl enable cliproxyapi.service
 
-# Verify the service is enabled
-systemctl --user is-enabled cliproxyapi.service
+# Start the service now
+sudo systemctl start cliproxyapi.service
 
-# Check if the service will start on boot
-systemctl --user is-active cliproxyapi.service
+# Verify the service is enabled and running
+sudo systemctl is-enabled cliproxyapi.service
+sudo systemctl status cliproxyapi.service
 ```
 
 **To disable autostart:**
 ```bash
-systemctl --user disable cliproxyapi.service
+sudo systemctl disable cliproxyapi.service
 ```
 
 **Important Notes:**
-- The `--user` flag means the service runs as your user and starts when you log in
-- For system-wide startup (requires root), you would need to manually install the service file to `/etc/systemd/system/`
-- User services require lingering to be enabled for startup without login or after SSH logout: `loginctl enable-linger $USER`
+- The installer now creates a **system-wide** systemd service under `/etc/systemd/system/cliproxyapi.service`
+- The service runs as the user who ran the installer (`SUDO_USER` if invoked with sudo)
+- Because it is system-wide, it keeps running after you close the shell or disconnect from SSH
 
 **If the service is not working:**
 ```bash
 # Reload systemd daemon
-systemctl --user daemon-reload
+sudo systemctl daemon-reload
 
 # Check service status for errors
-systemctl --user status cliproxyapi.service
+sudo systemctl status cliproxyapi.service
 
 # View detailed logs
-journalctl --user -u cliproxyapi.service -n 50
+sudo journalctl -u cliproxyapi.service -n 50
 
 # Check if service file exists
-ls -la ~/.config/systemd/user/cliproxyapi.service
+ls -la /etc/systemd/system/cliproxyapi.service
 ```
 
 ## Troubleshooting
@@ -292,7 +291,7 @@ ls -la ~/.config/systemd/user/cliproxyapi.service
 4. **Service Won't Start**
     ```bash
     # Check service logs
-    journalctl --user -u cliproxyapi.service -n 50
+    sudo journalctl -u cliproxyapi.service -n 50
     
     # Check configuration
     ./cliproxyapi-installer check-config
@@ -307,33 +306,33 @@ ls -la ~/.config/systemd/user/cliproxyapi.service
     pkill cli-proxy-api
     
     # Then restart the service
-    systemctl --user restart cliproxyapi.service
+    sudo systemctl restart cliproxyapi.service
     ```
 
 6. **Systemd Service Issues**
     ```bash
     # Reload systemd daemon
-    systemctl --user daemon-reload
+    sudo systemctl daemon-reload
     
     # Check if service file exists
-    ls -la ~/.config/systemd/user/cliproxyapi.service
+    ls -la /etc/systemd/system/cliproxyapi.service
     
     # Reset service (disable and re-enable)
-    systemctl --user disable cliproxyapi.service
-    systemctl --user enable cliproxyapi.service
-    systemctl --user start cliproxyapi.service
+    sudo systemctl disable cliproxyapi.service
+    sudo systemctl enable cliproxyapi.service
+    sudo systemctl start cliproxyapi.service
     ```
 
 7. **Upgrade Service Issues**
     ```bash
     # If service doesn't restart after upgrade
-    systemctl --user status cliproxyapi.service
+    sudo systemctl status cliproxyapi.service
     
     # Check recent service logs
-    journalctl --user -u cliproxyapi.service -n 20
+    sudo journalctl -u cliproxyapi.service -n 20
     
     # Manually restart if needed
-    systemctl --user restart cliproxyapi.service
+    sudo systemctl restart cliproxyapi.service
     ```
 
 8. **Configuration Protection Issues**
@@ -346,7 +345,7 @@ ls -la ~/.config/systemd/user/cliproxyapi.service
     cp ~/cliproxyapi/config_backup/config_YYYYMMDD_HHMMSS.yaml ~/cliproxyapi/config.yaml
     
     # Restart service after restoring
-    systemctl --user restart cliproxyapi.service
+    sudo systemctl restart cliproxyapi.service
     ```
 
 ### Getting Help

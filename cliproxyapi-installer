@@ -290,9 +290,9 @@ show_quick_start() {
         echo -e "   ${CYAN}./cli-proxy-api${NC}"
         echo
         echo -e "${BLUE}5. Or run as a systemd service:${NC}"
-        echo -e "   ${CYAN}systemctl --user enable cliproxyapi.service${NC}"
-        echo -e "   ${CYAN}systemctl --user start cliproxyapi.service${NC}"
-        echo -e "   ${CYAN}systemctl --user status cliproxyapi.service${NC}"
+        echo -e "   ${CYAN}systemctl enable cliproxyapi.service${NC}"
+        echo -e "   ${CYAN}systemctl start cliproxyapi.service${NC}"
+        echo -e "   ${CYAN}systemctl status cliproxyapi.service${NC}"
         echo
         echo -e "${BLUE}6. Read the full documentation:${NC}"
         echo -e "   ${CYAN}https://github.com/router-for-me/CLIProxyAPI${NC}"
@@ -301,9 +301,9 @@ show_quick_start() {
         echo -e "   ${CYAN}./cli-proxy-api${NC}"
         echo
         echo -e "${BLUE}4. Or run as a systemd service:${NC}"
-        echo -e "   ${CYAN}systemctl --user enable cliproxyapi.service${NC}"
-        echo -e "   ${CYAN}systemctl --user start cliproxyapi.service${NC}"
-        echo -e "   ${CYAN}systemctl --user status cliproxyapi.service${NC}"
+        echo -e "   ${CYAN}systemctl enable cliproxyapi.service${NC}"
+        echo -e "   ${CYAN}systemctl start cliproxyapi.service${NC}"
+        echo -e "   ${CYAN}systemctl status cliproxyapi.service${NC}"
         echo
         echo -e "${BLUE}5. Read the full documentation:${NC}"
         echo -e "   ${CYAN}https://github.com/router-for-me/CLIProxyAPI${NC}"
@@ -459,7 +459,54 @@ restore_config() {
 
 # Check if systemd service is running
 is_service_running() {
-    systemctl --user is-active --quiet cliproxyapi.service 2>/dev/null
+    systemctl is-active --quiet cliproxyapi.service 2>/dev/null
+}
+
+# Run systemctl with privilege escalation when needed
+run_systemctl() {
+    if [[ $EUID -eq 0 ]]; then
+        systemctl "$@"
+        return
+    fi
+
+    if command -v sudo >/dev/null 2>&1; then
+        sudo systemctl "$@"
+        return
+    fi
+
+    log_error "System-wide service management requires root privileges or sudo"
+    exit 1
+}
+
+# Copy a file with privilege escalation when needed
+copy_with_privileges() {
+    local source="$1"
+    local destination="$2"
+
+    if [[ $EUID -eq 0 ]]; then
+        cp "$source" "$destination"
+        return
+    fi
+
+    if command -v sudo >/dev/null 2>&1; then
+        sudo cp "$source" "$destination"
+        return
+    fi
+
+    log_error "Root privileges or sudo are required to write $destination"
+    exit 1
+}
+
+# Remove legacy user-scoped service files from older installs
+cleanup_legacy_user_service() {
+    local legacy_service_dir="$HOME/.config/systemd/user"
+    local legacy_service_file="${legacy_service_dir}/cliproxyapi.service"
+    local legacy_wants_file="${legacy_service_dir}/default.target.wants/cliproxyapi.service"
+
+    if [[ -f "$legacy_service_file" || -L "$legacy_wants_file" ]]; then
+        rm -f "$legacy_service_file" "$legacy_wants_file"
+        log_info "Removed legacy user service configuration"
+    fi
 }
 
 # Check if any CLIProxyAPI processes are running
@@ -508,7 +555,7 @@ stop_cliproxyapi_processes() {
 stop_service() {
     if is_service_running; then
         log_info "Stopping CLIProxyAPI service..."
-        systemctl --user stop cliproxyapi.service
+        systemctl stop cliproxyapi.service
         log_success "Service stopped"
     else
         log_info "Service is not running"
@@ -518,67 +565,51 @@ stop_service() {
 # Start systemd service
 start_service() {
     log_info "Starting CLIProxyAPI service..."
-    systemctl --user start cliproxyapi.service
+    systemctl start cliproxyapi.service
     
     # Wait a moment and check if it started successfully
     sleep 2
     if is_service_running; then
         log_success "Service started successfully"
     else
-        log_warning "Service may not have started properly. Check with: systemctl --user status cliproxyapi.service"
+        log_warning "Service may not have started properly. Check with: systemctl status cliproxyapi.service"
     fi
 }
 
 # Restart systemd service
 restart_service() {
     log_info "Restarting CLIProxyAPI service..."
-    systemctl --user restart cliproxyapi.service
+    systemctl restart cliproxyapi.service
 
     # Wait a moment and check if it started successfully
     sleep 2
     if is_service_running; then
         log_success "Service restarted successfully"
     else
-        log_warning "Service may not have started properly. Check with: systemctl --user status cliproxyapi.service"
+        log_warning "Service may not have started properly. Check with: systemctl status cliproxyapi.service"
     fi
 }
 
-# Ensure the user session survives shell logout so the service keeps running
-ensure_lingering() {
-    if ! command -v loginctl >/dev/null 2>&1; then
-        log_warning "loginctl not found; run 'loginctl enable-linger $USER' manually to keep the service alive after logout"
-        return
-    fi
-
-    if loginctl show-user "$USER" -p Linger --value 2>/dev/null | grep -qi '^yes$'; then
-        log_info "User lingering is already enabled for $USER"
-        return
-    fi
-
-    if loginctl enable-linger "$USER" >/dev/null 2>&1; then
-        log_success "Enabled user lingering for $USER so CLIProxyAPI keeps running after logout"
-    else
-        log_warning "Could not enable lingering automatically; run 'loginctl enable-linger $USER' as root to keep the service alive after logout"
-    fi
-}
-
-# Create systemd service file
+# Create system-wide systemd service file
 create_systemd_service() {
     local install_dir="$1"
     local service_file="${install_dir}/cliproxyapi.service"
-    local systemd_dir="$HOME/.config/systemd/user"
-    local systemd_service_file="${systemd_dir}/cliproxyapi.service"
-    
+    local systemd_service_file="/etc/systemd/system/cliproxyapi.service"
+    local service_user="${SUDO_USER:-$USER}"
+    local service_home
+    service_home=$(getent passwd "$service_user" | cut -d: -f6)
+    if [[ -z "$service_home" ]]; then
+        service_home="$HOME"
+    fi
+
     log_info "Creating systemd service file..."
-    
-    # Create systemd user directory
-    mkdir -p "$systemd_dir"
-    
-    # Create service file content with basic working configuration
+
+    # Create service file content with system-wide configuration
     cat > "$service_file" << EOF
 [Unit]
 Description=CLIProxyAPI Service
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -586,27 +617,29 @@ WorkingDirectory=$install_dir
 ExecStart=$install_dir/cli-proxy-api
 Restart=always
 RestartSec=10
-Environment=HOME=$HOME
+User=$service_user
+Environment=HOME=$service_home
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
 
-    # Copy to systemd user directory
-    cp "$service_file" "$systemd_service_file"
-    
-    # Reload systemd daemon
-    systemctl --user daemon-reload || log_warning "Could not reload systemd daemon (this is normal on first run)"
+    # Install to system-wide systemd directory
+    copy_with_privileges "$service_file" "$systemd_service_file"
 
-    # Keep the service alive after SSH/logout by enabling lingering when possible
-    ensure_lingering
+    # Reload systemd daemon
+    run_systemctl daemon-reload || log_warning "Could not reload systemd daemon (this is normal on first run)"
+
+    # Remove any legacy user-scoped service files from previous installs
+    cleanup_legacy_user_service
 
     log_success "Systemd service file created: $service_file"
     log_success "Systemd service installed: $systemd_service_file"
     log_info "To enable and start the service:"
-    log_info "  systemctl --user enable cliproxyapi.service"
-    log_info "  systemctl --user start cliproxyapi.service"
-    log_info "  systemctl --user status cliproxyapi.service"
+    log_info "  systemctl enable cliproxyapi.service"
+    log_info "  systemctl start cliproxyapi.service"
+    log_info "  systemctl status cliproxyapi.service"
 }
 
 # Copy example config if no existing config and setup main directory structure
@@ -859,7 +892,7 @@ install_cliproxyapi() {
         elif is_service_running; then
             log_info "Service is running"
         else
-            log_info "To start the service: systemctl --user start cliproxyapi.service"
+            log_info "To start the service: systemctl start cliproxyapi.service"
         fi
         
         # Check if this is the first time setup (no existing config)
@@ -909,8 +942,8 @@ show_status() {
         
         if [[ -f "${INSTALL_DIR}/cliproxyapi.service" ]]; then
             echo "Systemd Service: Available"
-            echo "  To enable: systemctl --user enable cliproxyapi.service"
-            echo "  To start:  systemctl --user start cliproxyapi.service"
+            echo "  To enable: systemctl enable cliproxyapi.service"
+            echo "  To start:  systemctl start cliproxyapi.service"
         else
             echo "Systemd Service: Missing"
         fi
@@ -1012,7 +1045,7 @@ main() {
                     echo -e "  ${CYAN}./cli-proxy-api${NC}"
                     echo
                     echo -e "${BLUE}Or run as a service:${NC}"
-                    echo -e "  ${CYAN}systemctl --user start cliproxyapi.service${NC}"
+                    echo -e "  ${CYAN}systemctl start cliproxyapi.service${NC}"
                 else
                     echo -e "❌ API Keys: ${RED}NOT CONFIGURED${NC}"
                     echo -e "❌ Status: ${RED}Not ready to run${NC}"
